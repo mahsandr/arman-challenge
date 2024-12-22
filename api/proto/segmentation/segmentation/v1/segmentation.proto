@@ -1,0 +1,14 @@
+syntax = "proto3";
+
+package segmentation.v1;
+
+import "common/v1/user_segment.proto";
+
+service SegmentationService {
+  rpc SendSendUserSegment(SendUserSegmentRequest)
+      returns (SendUserSegmentResponse);
+}
+
+message SendUserSegmentRequest { common.v1.UserSegment user_segment = 1; }
+
+message SendUserSegmentResponse {}
