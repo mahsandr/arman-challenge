@@ -154,3 +154,54 @@ help:
 docker: build-release
 	docker buildx build --build-arg GITHUB_TOKEN=${GITHUB_TOKEN} --build-arg GOPROXYURL="https://goproxy.cn" -t localhost:5000/mahsandr/arman-challenge:${VERSION}  .
 	docker push localhost:5000/mahsandr/arman-challenge:${VERSION}
+
+# Variables for database migration and build
+GOOSE = $(shell which goose)
+GOOSE_CMD = github.com/pressly/goose/v3/cmd/goose
+CLICKHOUSE_DB_URL ?= tcp://127.0.0.1:9000
+MIGRATIONS_DIR = ./internal/infrastructure/clickhouse/migrations
+MAIN_BINARY = $(or ${MAIN_BINARY}, main)
+
+# Targets for database migration and build
+.PHONY: all install-goose create-migration migrate build run clean
+
+# Default target
+all: install-goose build
+
+# Install goose if not installed
+install-goose:
+ifndef GOOSE
+	@echo "goose not found, installing..."
+	go install $(GOOSE_CMD)@latest
+else
+	@echo "goose is already installed"
+endif
+
+# Create a new migration
+create-migration:
+ifndef NAME
+	@echo "Error: Migration name is required. Use 'make create-migration NAME=your_migration_name'"
+	exit 1
+endif
+	@$(GOOSE) -dir $(MIGRATIONS_DIR) create $(NAME) sql
+
+# Run migrations
+migrate:
+	@$(GOOSE) -dir $(MIGRATIONS_DIR) clickhouse "$(CLICKHOUSE_DB_URL)" up
+# Rollback migrations
+migrate-down:
+	@$(GOOSE) -dir $(MIGRATIONS_DIR) clickhouse "$(CLICKHOUSE_DB_URL)" down
+# Build the Go project
+build:
+	@echo "Building project..."
+	go build -o $(MAIN_BINARY) .
+
+# Run the built binary
+run: build
+	@echo "Running application..."
+	./$(MAIN_BINARY)
+
+# Clean up build artifacts
+clean:
+	@echo "Cleaning up..."
+	rm -f $(MAIN_BINARY)
