@@ -2,13 +2,14 @@ syntax = "proto3";
 
 package segmentation.v1;
 
-import "common/v1/user_segment.proto";
-
 service SegmentationService {
-  rpc SendSendUserSegment(SendUserSegmentRequest)
-      returns (SendUserSegmentResponse);
+  rpc AddUserSegment(AddUserSegmentRequest) returns (AddUserSegmentResponse);
 }
 
-message SendUserSegmentRequest { common.v1.UserSegment user_segment = 1; }
+message AddUserSegmentRequest { UserSegment user_segment = 1; }
+message AddUserSegmentResponse {}
 
-message SendUserSegmentResponse {}
+message UserSegment {
+  string user_id = 1;
+  string segment = 2;
+}

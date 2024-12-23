@@ -19,14 +19,14 @@ import (
 const _ = grpc.SupportPackageIsVersion8
 
 const (
-	SegmentationService_SendSendUserSegment_FullMethodName = "/segmentation.v1.SegmentationService/SendSendUserSegment"
+	SegmentationService_AddUserSegment_FullMethodName = "/segmentation.v1.SegmentationService/AddUserSegment"
 )
 
 // SegmentationServiceClient is the client API for SegmentationService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type SegmentationServiceClient interface {
-	SendSendUserSegment(ctx context.Context, in *SendUserSegmentRequest, opts ...grpc.CallOption) (*SendUserSegmentResponse, error)
+	AddUserSegment(ctx context.Context, in *AddUserSegmentRequest, opts ...grpc.CallOption) (*AddUserSegmentResponse, error)
 }
 
 type segmentationServiceClient struct {
@@ -37,10 +37,10 @@ func NewSegmentationServiceClient(cc grpc.ClientConnInterface) SegmentationServi
 	return &segmentationServiceClient{cc}
 }
 
-func (c *segmentationServiceClient) SendSendUserSegment(ctx context.Context, in *SendUserSegmentRequest, opts ...grpc.CallOption) (*SendUserSegmentResponse, error) {
+func (c *segmentationServiceClient) AddUserSegment(ctx context.Context, in *AddUserSegmentRequest, opts ...grpc.CallOption) (*AddUserSegmentResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(SendUserSegmentResponse)
-	err := c.cc.Invoke(ctx, SegmentationService_SendSendUserSegment_FullMethodName, in, out, cOpts...)
+	out := new(AddUserSegmentResponse)
+	err := c.cc.Invoke(ctx, SegmentationService_AddUserSegment_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func (c *segmentationServiceClient) SendSendUserSegment(ctx context.Context, in 
 // All implementations must embed UnimplementedSegmentationServiceServer
 // for forward compatibility
 type SegmentationServiceServer interface {
-	SendSendUserSegment(context.Context, *SendUserSegmentRequest) (*SendUserSegmentResponse, error)
+	AddUserSegment(context.Context, *AddUserSegmentRequest) (*AddUserSegmentResponse, error)
 	mustEmbedUnimplementedSegmentationServiceServer()
 }
 
@@ -59,8 +59,8 @@ type SegmentationServiceServer interface {
 type UnimplementedSegmentationServiceServer struct {
 }
 
-func (UnimplementedSegmentationServiceServer) SendSendUserSegment(context.Context, *SendUserSegmentRequest) (*SendUserSegmentResponse, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method SendSendUserSegment not implemented")
+func (UnimplementedSegmentationServiceServer) AddUserSegment(context.Context, *AddUserSegmentRequest) (*AddUserSegmentResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AddUserSegment not implemented")
 }
 func (UnimplementedSegmentationServiceServer) mustEmbedUnimplementedSegmentationServiceServer() {}
 
@@ -75,20 +75,20 @@ func RegisterSegmentationServiceServer(s grpc.ServiceRegistrar, srv Segmentation
 	s.RegisterService(&SegmentationService_ServiceDesc, srv)
 }
 
-func _SegmentationService_SendSendUserSegment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(SendUserSegmentRequest)
+func _SegmentationService_AddUserSegment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AddUserSegmentRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
 	if interceptor == nil {
-		return srv.(SegmentationServiceServer).SendSendUserSegment(ctx, in)
+		return srv.(SegmentationServiceServer).AddUserSegment(ctx, in)
 	}
 	info := &grpc.UnaryServerInfo{
 		Server:     srv,
-		FullMethod: SegmentationService_SendSendUserSegment_FullMethodName,
+		FullMethod: SegmentationService_AddUserSegment_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(SegmentationServiceServer).SendSendUserSegment(ctx, req.(*SendUserSegmentRequest))
+		return srv.(SegmentationServiceServer).AddUserSegment(ctx, req.(*AddUserSegmentRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -101,8 +101,8 @@ var SegmentationService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*SegmentationServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
-			MethodName: "SendSendUserSegment",
-			Handler:    _SegmentationService_SendSendUserSegment_Handler,
+			MethodName: "AddUserSegment",
+			Handler:    _SegmentationService_AddUserSegment_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

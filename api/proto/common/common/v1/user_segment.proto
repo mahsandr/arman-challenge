@@ -1,8 +1,0 @@
-syntax = "proto3";
-package common.v1;
-
-message UserSegment {
-  string user_id = 1;
-  string segment = 2;
-  int64 timestamp = 3;
-}
