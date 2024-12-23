@@ -10,8 +10,10 @@
 # Go workspace file
 go.work
 
+# Files and directories matching the patterns listed below will not be tracked by Git.
 bin/
 build/
+
 # VS Code settings
 .vscode/
 .history/
