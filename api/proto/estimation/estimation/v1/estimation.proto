@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package estimation.v1;
+
+service EstimationService {
+  rpc EstimateUsers(EstimateUsersRequest) returns (EstimateUsersResponse);
+}
+
+message EstimateUsersRequest { string segment = 1; }
+
+message EstimateUsersResponse { uint32 count = 1; }
