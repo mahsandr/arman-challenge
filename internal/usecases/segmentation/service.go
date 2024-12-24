@@ -1,4 +1,4 @@
-package segment
+package segmentation
 
 import (
 	"context"
@@ -27,6 +27,8 @@ func NewService(repo repository.SegmentRepository, producer repository.MessageBr
 	return s
 }
 
+// AddUserSegment adds a new user segment by marshaling it to JSON and producing it to the message broker.
+// It logs any errors encountered during marshaling or producing.
 func (s *Service) AddUserSegment(ctx context.Context, segment *models.UserSegment) error {
 	msg, err := json.Marshal(segment)
 	if err != nil {
@@ -39,4 +41,8 @@ func (s *Service) AddUserSegment(ctx context.Context, segment *models.UserSegmen
 		return err
 	}
 	return nil
+}
+
+func (s *Service) Stop() {
+	s.producer.Close()
 }

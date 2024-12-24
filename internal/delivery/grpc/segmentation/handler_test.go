@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/golang/mock/gomock"
 	pb "github.com/mahsandr/arman-challenge/api/proto/generated/segmentation/v1"
@@ -32,8 +33,9 @@ func TestHandler_AddUserSegment(t *testing.T) {
 			},
 			mockService: func(m *mock_usecases.MockSegmentService) {
 				m.EXPECT().AddUserSegment(gomock.Any(), &models.UserSegment{
-					UserID:  "user1",
-					Segment: "segment1",
+					UserID:      "user1",
+					Segment:     "segment1",
+					RegistredAt: uint32(time.Now().Unix()),
 				}).Return(nil)
 			},
 			expectedError: nil,
@@ -46,8 +48,9 @@ func TestHandler_AddUserSegment(t *testing.T) {
 					Segment: "segment1",
 				},
 			},
-			mockService:   func(m *mock_usecases.MockSegmentService) {},
-			expectedError: status.Error(codes.InvalidArgument, "Key: 'UserSegment.UserID' Error:Field validation for 'UserID' failed on the 'required' tag"),
+			mockService: func(m *mock_usecases.MockSegmentService) {},
+			expectedError: status.Error(codes.InvalidArgument,
+				"Key: 'UserSegment.UserID' Error:Field validation for 'UserID' failed on the 'required' tag"),
 		},
 		{
 			name: "service error",

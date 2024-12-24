@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"time"
 
 	pb "github.com/mahsandr/arman-challenge/api/proto/generated/segmentation/v1"
 	"github.com/mahsandr/arman-challenge/internal/domain/models"
@@ -32,6 +33,8 @@ func (h *Handler) AddUserSegment(ctx context.Context, in *pb.AddUserSegmentReque
 	userSegment := &models.UserSegment{
 		UserID:  in.UserSegment.UserId,
 		Segment: in.UserSegment.Segment,
+		// RegistredAt is the timestamp when the user was registered
+		RegistredAt: uint32(time.Now().Unix()),
 	}
 	if validateErr := h.validator.ValidateStruct(userSegment); validateErr != "" {
 		return nil, status.Error(codes.InvalidArgument, validateErr)

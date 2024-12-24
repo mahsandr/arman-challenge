@@ -1,4 +1,4 @@
-package segment
+package segmentation
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func TestService_AddUserSegment(t *testing.T) {
 			defer ctrl.Finish()
 
 			mockProducer := mock_repository.NewMockMessageBroker(ctrl)
-			logger, _ := zap.NewProduction()
+			logger := zap.NewNop()
 
 			service := NewService(nil, mockProducer, logger)
 

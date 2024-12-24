@@ -1,8 +1,12 @@
 package repository
 
-import models "github.com/mahsandr/arman-challenge/internal/domain/models"
+import (
+	"context"
+
+	models "github.com/mahsandr/arman-challenge/internal/domain/models"
+)
 
 type SegmentRepository interface {
-	SaveUserSegments(segments []models.UserSegment) error
-	GetSegmentCount(segment string) (int64, error)
+	SaveUserSegments(ctx context.Context, segments []*models.UserSegment) error
+	GetSegmentUsersCount(ctx context.Context, segment string) (uint32, error)
 }
