@@ -11,13 +11,12 @@ import (
 
 // KafkaProducer wraps the Kafka producer functionality.
 type KafkaProducer struct {
-	brokers  []string
 	topic    string
 	producer sarama.SyncProducer
 	logger   *zap.Logger
 }
 
-func NewKafkaProducer(logger *zap.Logger, brokers []string, topic string, batchBytes int, flushInterval time.Duration) (*KafkaProducer, error) {
+func NewProducer(logger *zap.Logger, brokers []string, topic string, batchBytes int, flushInterval time.Duration) (*KafkaProducer, error) {
 	config := sarama.NewConfig()
 	config.Producer.RequiredAcks = sarama.WaitForAll
 	config.Producer.Compression = sarama.CompressionSnappy
@@ -25,7 +24,7 @@ func NewKafkaProducer(logger *zap.Logger, brokers []string, topic string, batchB
 	config.Producer.Flush.Frequency = flushInterval
 	config.Producer.Return.Successes = true
 
-	producer, err := sarama.NewSyncProducer([]string{"localhost:9092"}, config)
+	producer, err := sarama.NewSyncProducer(brokers, config)
 	if err != nil {
 		return nil, fmt.Errorf("error creating kafka producer: %v", err)
 	}

@@ -2,8 +2,6 @@ package kafka
 
 import (
 	"context"
-	"fmt"
-	"log"
 	"sync"
 	"time"
 
@@ -13,24 +11,22 @@ import (
 
 // KafkaConsumer wraps the Kafka consumer functionality.
 type KafkaConsumer struct {
-	brokers   []string
-	topic     string
-	groupID   string
-	segmentCh chan [][]byte
-	consumer  sarama.ConsumerGroup
-	logger    *zap.Logger
-	pool      *sync.Pool
-	waitGroup *sync.WaitGroup
+	topic      string
+	segmentCh  chan [][]byte
+	consumer   sarama.ConsumerGroup
+	logger     *zap.Logger
+	waitGroup  sync.WaitGroup
+	bufferSize int
 }
 
-// NewKafkaConsumer creates a new Kafka consumer instance.
-func NewKafkaConsumer(logger *zap.Logger, brokers []string, groupID, topic string, minBytes, maxBytes int32, pollInterval, readTimeout time.Duration, bufferSize int) (*KafkaConsumer, error) {
+// NewConsumer creates a new Kafka consumer instance.
+func NewConsumer(logger *zap.Logger, brokers []string, groupID, topic string,
+	minBytes, maxBytes int32, pollInterval time.Duration, bufferSize int) (*KafkaConsumer, error) {
 	config := sarama.NewConfig()
 	config.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRange()
 	config.Consumer.Fetch.Min = minBytes
 	config.Consumer.Fetch.Max = maxBytes
 	config.Consumer.MaxWaitTime = pollInterval
-	config.Consumer.Group.Session.Timeout = readTimeout
 
 	consumer, err := sarama.NewConsumerGroup(brokers, groupID, config)
 	if err != nil {
@@ -38,51 +34,60 @@ func NewKafkaConsumer(logger *zap.Logger, brokers []string, groupID, topic strin
 	}
 
 	return &KafkaConsumer{
-		logger:    logger,
-		brokers:   brokers,
-		topic:     topic,
-		groupID:   groupID,
-		segmentCh: make(chan [][]byte, bufferSize),
-		consumer:  consumer,
-		waitGroup: &sync.WaitGroup{},
-		pool: &sync.Pool{
-			New: func() interface{} {
-				return make([][]byte, 0, 10)
-			},
-		},
+		bufferSize: bufferSize,
+		logger:     logger,
+		topic:      topic,
+		segmentCh:  make(chan [][]byte, 100), // Buffered channel to handle bursts
+		consumer:   consumer,
 	}, nil
 }
 
+// Consume starts consuming messages from the Kafka topic.
 func (kc *KafkaConsumer) Consume(ctx context.Context) (<-chan [][]byte, error) {
-	handler := &consumerGroupHandler{segmentCh: kc.segmentCh, pool: kc.pool}
-	defer kc.waitGroup.Add(1)
+	handler := &consumerGroupHandler{
+		segmentCh:  kc.segmentCh,
+		logger:     kc.logger,
+		bufferSize: kc.bufferSize,
+		pool: &sync.Pool{
+			New: func() interface{} {
+				return make([]byte, 0, 1024) // Adjust the buffer size as needed
+			},
+		},
+	}
+
+	kc.waitGroup.Add(1)
 	go func() {
 		defer kc.waitGroup.Done()
 		for {
-			if err := kc.consumer.Consume(ctx, []string{kc.topic}, handler); err != nil {
-				log.Printf("Error consuming Kafka messages: %v", err)
-			}
 			if ctx.Err() != nil {
 				return
 			}
+
+			if err := kc.consumer.Consume(ctx, []string{kc.topic}, handler); err != nil {
+				kc.logger.Error("Error consuming Kafka messages", zap.Error(err))
+				if err == sarama.ErrClosedConsumerGroup {
+					return
+				}
+			}
 		}
 	}()
+
 	return kc.segmentCh, nil
 }
 
+// Close shuts down the Kafka consumer gracefully.
 func (kc *KafkaConsumer) Close() error {
-	close(kc.segmentCh)
 	err := kc.consumer.Close()
-	if err != nil {
-		return err
-	}
 	kc.waitGroup.Wait()
-	return nil
+	close(kc.segmentCh)
+	return err
 }
 
 type consumerGroupHandler struct {
-	segmentCh chan [][]byte
-	pool      *sync.Pool
+	segmentCh  chan [][]byte
+	pool       *sync.Pool
+	logger     *zap.Logger
+	bufferSize int
 }
 
 func (c *consumerGroupHandler) Setup(_ sarama.ConsumerGroupSession) error {
@@ -94,21 +99,47 @@ func (c *consumerGroupHandler) Cleanup(_ sarama.ConsumerGroupSession) error {
 }
 
 func (c *consumerGroupHandler) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
-	batch := c.pool.Get().([][]byte)
-	defer c.pool.Put(batch[:0])
-
-	for message := range claim.Messages() {
-		batch = append(batch, message.Value)
-	}
-	if len(batch) > 0 {
+	batch := make([][]byte, 0, c.bufferSize)
+	defer func() {
+		if len(batch) > 0 {
+			_ = c.sendBatch(sess.Context(), batch)
+		}
+	}()
+	for {
 		select {
-		case c.segmentCh <- batch:
-			for message := range claim.Messages() {
-				sess.MarkMessage(message, "")
+		case message, ok := <-claim.Messages():
+			if !ok {
+				return nil
 			}
-		default:
-			return fmt.Errorf("error on sending message to channel")
+
+			msgCopy := c.pool.Get().([]byte)[:len(message.Value)]
+			copy(msgCopy, message.Value)
+			batch = append(batch, msgCopy)
+			c.pool.Put(&msgCopy)
+
+			sess.MarkMessage(message, "")
+
+			if len(batch) >= c.bufferSize {
+				if err := c.sendBatch(sess.Context(), batch); err != nil {
+					c.logger.Error("Failed to send batch", zap.Error(err))
+				}
+				batch = batch[:0] // Reset the batch
+			}
+
+		case <-sess.Context().Done():
+			return nil
 		}
 	}
-	return nil
+}
+
+func (c *consumerGroupHandler) sendBatch(ctx context.Context, msgs [][]byte) error {
+	batch := make([][]byte, len(msgs))
+	copy(batch, msgs)
+
+	select {
+	case c.segmentCh <- batch:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }

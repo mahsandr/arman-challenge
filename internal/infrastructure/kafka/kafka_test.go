@@ -2,125 +2,118 @@ package kafka
 
 import (
 	"context"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/IBM/sarama"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 )
 
-type mockConsumerGroup struct {
-	mock.Mock
+func TestKafkaProducer(t *testing.T) {
+	broker := sarama.NewMockBroker(t, 1)
+	defer broker.Close()
+
+	mockMetadataResponse := sarama.NewMockMetadataResponse(t).
+		SetBroker(broker.Addr(), broker.BrokerID()).
+		SetLeader("test-topic", 0, broker.BrokerID())
+	broker.SetHandlerByMap(map[string]sarama.MockResponse{
+		"MetadataRequest": mockMetadataResponse,
+		"ProduceRequest":  sarama.NewMockProduceResponse(t),
+	})
+
+	logger := zap.NewNop()
+	defer logger.Sync()
+
+	producer, err := NewProducer(logger, []string{broker.Addr()}, "test-topic", 100, 10*time.Millisecond)
+	assert.NoError(t, err)
+	defer producer.Close()
+
+	err = producer.Produce(context.Background(), []byte("test-message"))
+	assert.NoError(t, err)
 }
+func TestKafkaConsumer(t *testing.T) {
+	// Mock broker setup
+	broker := sarama.NewMockBroker(t, 1)
+	defer broker.Close()
 
-func (m *mockConsumerGroup) Consume(ctx context.Context, topics []string, handler sarama.ConsumerGroupHandler) error {
-	args := m.Called(ctx, topics, handler)
-	return args.Error(0)
-}
+	// Create mock consumer group metadata response
+	groupMetadataResponse := sarama.NewMockFindCoordinatorResponse(t).
+		SetCoordinator(sarama.CoordinatorGroup, "group-id", broker)
 
-func (m *mockConsumerGroup) Close() error {
-	args := m.Called()
-	return args.Error(0)
-}
+	// Create mock offset fetch response
+	offsetFetchResponse := sarama.NewMockOffsetFetchResponse(t).
+		SetOffset("group-id", "test-topic", 0, 0, "", sarama.ErrNoError)
 
-func (m *mockConsumerGroup) Pause(partitions map[string][]int32) {
-	m.Called(partitions)
-}
+	// Create mock consumer metadata response
+	metadataResponse := sarama.NewMockMetadataResponse(t).
+		SetBroker(broker.Addr(), broker.BrokerID()).
+		SetLeader("test-topic", 0, broker.BrokerID())
 
-func (m *mockConsumerGroup) Resume(partitions map[string][]int32) {
-	m.Called(partitions)
-}
+	// Create mock offset response
+	offsetResponse := sarama.NewMockOffsetResponse(t).
+		SetOffset("test-topic", 0, sarama.OffsetOldest, 0).
+		SetOffset("test-topic", 0, sarama.OffsetNewest, 1)
 
-func (m *mockConsumerGroup) Errors() <-chan error {
-	args := m.Called()
-	return args.Get(0).(<-chan error)
-}
+	// Create mock fetch response with test message
+	fetchResponse := sarama.NewMockFetchResponse(t, 1).
+		SetMessage("test-topic", 0, 0, sarama.StringEncoder("test-message"))
 
-func (m *mockConsumerGroup) ResumeAll() {
-	m.Called()
-}
+	// Set up the mock handler responses
+	broker.SetHandlerByMap(map[string]sarama.MockResponse{
+		"MetadataRequest":        metadataResponse,
+		"OffsetRequest":          offsetResponse,
+		"FindCoordinatorRequest": groupMetadataResponse,
+		"JoinGroupRequest": sarama.NewMockJoinGroupResponse(t).
+			SetGroupProtocol(sarama.RangeBalanceStrategyName).
+			SetMemberId("test-member-id").
+			SetGenerationId(1).
+			SetLeaderId("test-member-id"),
+		"SyncGroupRequest": sarama.NewMockSyncGroupResponse(t).
+			SetMemberAssignment(&sarama.ConsumerGroupMemberAssignment{
+				UserData: []byte("test-topic"),
+				Topics: map[string][]int32{
+					"test-topic": {0},
+				},
+			}).
+			SetError(sarama.ErrNoError),
+		"HeartbeatRequest":    sarama.NewMockHeartbeatResponse(t),
+		"OffsetFetchRequest":  offsetFetchResponse,
+		"FetchRequest":        fetchResponse,
+		"OffsetCommitRequest": sarama.NewMockOffsetCommitResponse(t),
+	})
 
-func (m *mockConsumerGroup) PauseAll() {
-	m.Called()
-}
+	// Logger setup
+	logger := zap.NewNop()
+	defer logger.Sync()
 
-func TestNewKafkaConsumer(t *testing.T) {
-	logger, _ := zap.NewProduction()
-	brokers := []string{"localhost:9092"}
-	groupID := "test-group"
-	topic := "test-topic"
-	minBytes := int32(1)
-	maxBytes := int32(10)
-	pollInterval := 100 * time.Millisecond
-	readTimeout := 10 * time.Second
-	bufferSize := 100
+	// KafkaConsumer setup with modified configuration
+	config := sarama.NewConfig()
+	config.Version = sarama.V2_0_0_0 // Set an explicit version
+	config.Consumer.Group.Rebalance.Strategy = sarama.NewBalanceStrategyRange()
+	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Return.Errors = true
 
-	consumer, err := NewKafkaConsumer(logger, brokers, groupID, topic, minBytes, maxBytes, pollInterval, readTimeout, bufferSize)
-	require.NoError(t, err)
-	assert.NotNil(t, consumer)
-	assert.Equal(t, brokers, consumer.brokers)
-	assert.Equal(t, groupID, consumer.groupID)
-	assert.Equal(t, topic, consumer.topic)
-	assert.NotNil(t, consumer.segmentCh)
-	assert.NotNil(t, consumer.consumer)
-}
+	consumer, err := NewConsumer(logger, []string{broker.Addr()}, "group-id", "test-topic", 1, 1048576, 100*time.Millisecond, 1)
+	assert.NoError(t, err)
 
-func TestKafkaConsumer_Consume(t *testing.T) {
-	logger, _ := zap.NewProduction()
-	brokers := []string{"localhost:9092"}
-	groupID := "test-group"
-	topic := "test-topic"
-	bufferSize := 100
+	// Start consuming with a longer timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer consumer.Close()
 
-	mockConsumer := new(mockConsumerGroup)
-	consumer := &KafkaConsumer{
-		logger:    logger,
-		brokers:   brokers,
-		topic:     topic,
-		groupID:   groupID,
-		segmentCh: make(chan [][]byte, bufferSize),
-		consumer:  mockConsumer,
-		waitGroup: &sync.WaitGroup{},
+	messageCh, err := consumer.Consume(ctx)
+	assert.NoError(t, err)
+
+	// Wait for messages
+	for {
+		select {
+		case messages := <-messageCh:
+			assert.Greater(t, len(messages), 0, "No messages received")
+			assert.Equal(t, "test-message", string(messages[0]), "Incorrect message received")
+			cancel()
+			return
+		case <-ctx.Done():
+			t.Fatalf("Timeout waiting for messages: %v", ctx.Err())
+		}
 	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	mockConsumer.On("Consume", ctx, []string{topic}, mock.Anything).Return(nil).Once()
-
-	segmentCh, err := consumer.Consume(ctx)
-	require.NoError(t, err)
-	assert.NotNil(t, segmentCh)
-	consumer.waitGroup.Wait()
-	mockConsumer.AssertExpectations(t)
-}
-
-func TestKafkaConsumer_Close(t *testing.T) {
-	logger, _ := zap.NewProduction()
-	brokers := []string{"localhost:9092"}
-	groupID := "test-group"
-	topic := "test-topic"
-	bufferSize := 100
-
-	mockConsumer := new(mockConsumerGroup)
-	consumer := &KafkaConsumer{
-		logger:    logger,
-		brokers:   brokers,
-		topic:     topic,
-		groupID:   groupID,
-		segmentCh: make(chan [][]byte, bufferSize),
-		consumer:  mockConsumer,
-		waitGroup: &sync.WaitGroup{},
-	}
-
-	mockConsumer.On("Close").Return(nil).Once()
-
-	err := consumer.Close()
-	require.NoError(t, err)
-
-	mockConsumer.AssertExpectations(t)
 }
