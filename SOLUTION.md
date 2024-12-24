@@ -221,7 +221,6 @@ You can manage the service's migrations, versioning, tests, and linting using th
 - End-to-end data flow
 - Service interactions
 - Kafka message processing
-- Database operations
 
 5. Benchmark Tests
 
